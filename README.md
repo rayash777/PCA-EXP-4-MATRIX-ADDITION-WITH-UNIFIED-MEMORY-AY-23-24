@@ -1,182 +1,287 @@
-# Exp3-Sobel-edge-detection-filter-using-CUDA-to-enhance-the-performance-of-image-processing-tasks.
+# PCA-EXP-4-MATRIX-ADDITION-WITH-UNIFIED-MEMORY AY 23-24
+<h3>RAYASH RA R</h3>
+<h3>212224230226</h3>
+<h3>EX. NO: 4</h3>
+<h3>DATE: 24.03.2026</h3>
+<h1> <align=center> MATRIX ADDITION WITH UNIFIED MEMORY </h3>
+  Refer to the program sumMatrixGPUManaged.cu. Would removing the memsets below affect performance? If you can, check performance with nvprof or nvvp.</h3>
 
-<h3>ENTER YOUR NAME:RAYASH R</h3>
-<h3>ENTER YOUR REGISTER NO:212224230226</h3>
-<h3>EX. NO:3</h3>
-<h3>DATE:24-03-2026</h3>
-<h1> <align=center> Sobel edge detection filter using CUDA </h3>
-  Implement Sobel edge detection filtern using GPU.</h3>
-Experiment Details:
-  
 ## AIM:
-  The Sobel operator is a popular edge detection method that computes the gradient of the image intensity at each pixel. It uses convolution with two kernels to determine the gradient in both the x and y directions. This lab focuses on utilizing CUDA to parallelize the Sobel filter implementation for efficient processing of images.
-
-Code Overview: You will work with the provided CUDA implementation of the Sobel edge detection filter. The code reads an input image, applies the Sobel filter in parallel on the GPU, and writes the result to an output image.
+To perform Matrix addition with unified memory and check its performance with nvprof.
 ## EQUIPMENTS REQUIRED:
 Hardware – PCs with NVIDIA GPU & CUDA NVCC
 Google Colab with NVCC Compiler
-CUDA Toolkit and OpenCV installed.
-A sample image for testing.
-
 ## PROCEDURE:
-Tasks: 
-a. Modify the Kernel:
-
-Update the kernel to handle color images by converting them to grayscale before applying the Sobel filter.
-Implement boundary checks to avoid reading out of bounds for pixels on the image edges.
-
-b. Performance Analysis:
-
-Measure the performance (execution time) of the Sobel filter with different image sizes (e.g., 256x256, 512x512, 1024x1024).
-Analyze how the block size (e.g., 8x8, 16x16, 32x32) affects the execution time and output quality.
-
-c. Comparison:
-
-Compare the output of your CUDA Sobel filter with a CPU-based Sobel filter implemented using OpenCV.
-Discuss the differences in execution time and output quality.
+1.	Setup Device and Properties
+Initialize the CUDA device and get device properties.
+2.	Set Matrix Size: Define the size of the matrix based on the command-line argument or default value.
+Allocate Host Memory
+3.	Allocate memory on the host for matrices A, B, hostRef, and gpuRef using cudaMallocManaged.
+4.	Initialize Data on Host
+5.	Generate random floating-point data for matrices A and B using the initialData function.
+6.	Measure the time taken for initialization.
+7.	Compute Matrix Sum on Host: Compute the matrix sum on the host using sumMatrixOnHost.
+8.	Measure the time taken for matrix addition on the host.
+9.	Invoke Kernel
+10.	Define grid and block dimensions for the CUDA kernel launch.
+11.	Warm-up the kernel with a dummy launch for unified memory page migration.
+12.	Measure GPU Execution Time
+13.	Launch the CUDA kernel to compute the matrix sum on the GPU.
+14.	Measure the execution time on the GPU using cudaDeviceSynchronize and timing functions.
+15.	Check for Kernel Errors
+16.	Check for any errors that occurred during the kernel launch.
+17.	Verify Results
+18.	Compare the results obtained from the GPU computation with the results from the host to ensure correctness.
+19.	Free Allocated Memory
+20.	Free memory allocated on the device using cudaFree.
+21.	Reset Device and Exit
+22.	Reset the device using cudaDeviceReset and return from the main function.
 
 ## PROGRAM:
 ```
-%%writefile sobelEdgeDetectionFilter.cu
+%%cuda
+#include <stdio.h>
+#include <cuda_runtime.h>
+#include <cuda.h>
+#include <sys/time.h>
+
+#ifndef _COMMON_H
+#define _COMMON_H
+
+#define CHECK(call)                                                            \
+{                                                                              \
+    const cudaError_t error = call;                                            \
+    if (error != cudaSuccess)                                                  \
+    {                                                                          \
+        fprintf(stderr, "Error: %s:%d, ", __FILE__, __LINE__);                 \
+        fprintf(stderr, "code: %d, reason: %s\n", error,                       \
+                cudaGetErrorString(error));                                    \
+        exit(1);                                                               \
+    }                                                                          \
+}
+
+#define CHECK_CUBLAS(call)                                                     \
+{                                                                              \
+    cublasStatus_t err;                                                        \
+    if ((err = (call)) != CUBLAS_STATUS_SUCCESS)                               \
+    {                                                                          \
+        fprintf(stderr, "Got CUBLAS error %d at %s:%d\n", err, __FILE__,       \
+                __LINE__);                                                     \
+        exit(1);                                                               \
+    }                                                                          \
+}
+
+#define CHECK_CURAND(call)                                                     \
+{                                                                              \
+    curandStatus_t err;                                                        \
+    if ((err = (call)) != CURAND_STATUS_SUCCESS)                               \
+    {                                                                          \
+        fprintf(stderr, "Got CURAND error %d at %s:%d\n", err, __FILE__,       \
+                __LINE__);                                                     \
+        exit(1);                                                               \
+    }                                                                          \
+}
+
+#define CHECK_CUFFT(call)                                                      \
+{                                                                              \
+    cufftResult err;                                                           \
+    if ( (err = (call)) != CUFFT_SUCCESS)                                      \
+    {                                                                          \
+        fprintf(stderr, "Got CUFFT error %d at %s:%d\n", err, __FILE__,        \
+                __LINE__);                                                     \
+        exit(1);                                                               \
+    }                                                                          \
+}
+
+#define CHECK_CUSPARSE(call)                                                   \
+{                                                                              \
+    cusparseStatus_t err;                                                      \
+    if ((err = (call)) != CUSPARSE_STATUS_SUCCESS)                             \
+    {                                                                          \
+        fprintf(stderr, "Got error %d at %s:%d\n", err, __FILE__, __LINE__);   \
+        cudaError_t cuda_err = cudaGetLastError();                             \
+        if (cuda_err != cudaSuccess)                                           \
+        {                                                                      \
+            fprintf(stderr, "  CUDA error \"%s\" also detected\n",             \
+                    cudaGetErrorString(cuda_err));                             \
+        }                                                                      \
+        exit(1);                                                               \
+    }                                                                          \
+}
+
+inline double seconds()
+{
+    struct timeval tp;
+    struct timezone tzp;
+    int i = gettimeofday(&tp, &tzp);
+    return ((double)tp.tv_sec + (double)tp.tv_usec * 1.e-6);
+}
+
+#endif // _COMMON_H
+
 #include <cuda_runtime.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
-#include <opencv2/opencv.hpp>
+#include <cuda_runtime.h>
+#include <stdio.h>
 
-using namespace cv;
+void initialData(float *ip, const int size)
+{
+    int i;
+    for (i = 0; i < size; i++)
+    {
+        ip[i] = (float)( rand() & 0xFF ) / 10.0f;
+    }
+    return;
+}
 
-__global__ void sobelFilter(unsigned char *srcImage, unsigned char *dstImage, unsigned int width, unsigned int height) {
+void sumMatrixOnHost(float *A, float *B, float *C, const int nx, const int ny)
+{
+    float *ia = A;
+    float *ib = B;
+    float *ic = C;
 
-    //Write your code here
+    for (int iy = 0; iy < ny; iy++)
+    {
+        for (int ix = 0; ix < nx; ix++)
+        {
+            ic[ix] = ia[ix] + ib[ix];
+        }
 
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
+        ia += nx;
+        ib += nx;
+        ic += nx;
+    }
 
-    if (x > 0 && x < width - 1 && y > 0 && y < height - 1) {
+    return;
+}
 
-        int Gx = -srcImage[(y-1)*width + (x-1)] - 2*srcImage[y*width + (x-1)] - srcImage[(y+1)*width + (x-1)]
-                 + srcImage[(y-1)*width + (x+1)] + 2*srcImage[y*width + (x+1)] + srcImage[(y+1)*width + (x+1)];
+void checkResult(float *hostRef, float *gpuRef, const int N)
+{
+    double epsilon = 1.0E-8;
+    bool match = 1;
 
-        int Gy = -srcImage[(y-1)*width + (x-1)] - 2*srcImage[(y-1)*width + x] - srcImage[(y-1)*width + (x+1)]
-                 + srcImage[(y+1)*width + (x-1)] + 2*srcImage[(y+1)*width + x] + srcImage[(y+1)*width + (x+1)];
+    for (int i = 0; i < N; i++)
+    {
+        if (abs(hostRef[i] - gpuRef[i]) > epsilon)
+        {
+            match = 0;
+            printf("host %f gpu %f\n", hostRef[i], gpuRef[i]);
+            break;
+        }
+    }
 
-        int magnitude = sqrtf(Gx * Gx + Gy * Gy);
-
-        if (magnitude > 255) magnitude = 255;
-
-        dstImage[y * width + x] = (unsigned char)magnitude;
+    if (!match)
+    {
+        printf("Arrays do not match.\n\n");
     }
 }
 
-void checkCudaErrors(cudaError_t r) {
-    if (r != cudaSuccess) {
-        fprintf(stderr, "CUDA Error: %s\n", cudaGetErrorString(r));
-        exit(EXIT_FAILURE);
+// grid 2D block 2D
+__global__ void sumMatrixGPU(float *MatA, float *MatB, float *MatC, int nx, int ny)
+{
+    // calculate global thread index
+    int ix = blockIdx.x * blockDim.x + threadIdx.x;
+    int iy = blockIdx.y * blockDim.y + threadIdx.y;
+
+    int idx = iy * nx + ix;
+
+    // boundary check
+    if (ix < nx && iy < ny)
+    {
+        MatC[idx] = MatA[idx] + MatB[idx];
     }
 }
 
-int main() {
-    // Read input image
-    Mat image = imread("/content/img.jpg", IMREAD_GRAYSCALE);
+int main(int argc, char **argv)
+{
+    printf("%s Starting ", argv[0]);
 
-    if (image.empty()) {
-        printf("Error: Image not found.\n");
-        return -1;
-    }
+    // set up device
+    int dev = 0;
+    cudaDeviceProp deviceProp;
+    CHECK(cudaGetDeviceProperties(&deviceProp, dev));
+    printf("using Device %d: %s\n", dev, deviceProp.name);
+    CHECK(cudaSetDevice(dev));
 
-    int width = image.cols;
-    int height = image.rows;
-    size_t imageSize = width * height * sizeof(unsigned char);
+    // set up data size of matrix
+    int nx, ny;
+    int ishift = 12;
 
-    // Allocate host memory for output image
-    unsigned char *h_outputImage = (unsigned char *)malloc(imageSize);
-    if (h_outputImage == nullptr) {
-        fprintf(stderr, "Failed to allocate host memory\n");
-        return -1;
-    }
+    if  (argc > 1) ishift = atoi(argv[1]);
 
-    // Allocate device memory
-    unsigned char *d_inputImage, *d_outputImage;
-    checkCudaErrors(cudaMalloc(&d_inputImage, imageSize));
-    checkCudaErrors(cudaMalloc(&d_outputImage, imageSize));
-    checkCudaErrors(cudaMemcpy(d_inputImage, image.data, imageSize, cudaMemcpyHostToDevice));
+    nx = ny = 1 << ishift;
 
-    // Define CUDA events for timing
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
+    int nxy = nx * ny;
+    int nBytes = nxy * sizeof(float);
+    printf("Matrix size: nx %d ny %d\n", nx, ny);
 
-    // Launch kernel
-    dim3 blockSize(16, 16);
-    dim3 gridSize(ceil(width / 16.0), ceil(height / 16.0));
+    // malloc host memory
+    float *A, *B, *hostRef, *gpuRef;
+    CHECK(cudaMallocManaged((void **)&A, nBytes));
+    CHECK(cudaMallocManaged((void **)&B, nBytes));
+    CHECK(cudaMallocManaged((void **)&gpuRef,  nBytes);  );
+    CHECK(cudaMallocManaged((void **)&hostRef, nBytes););
 
-    cudaEventRecord(start);
-    sobelFilter<<<gridSize, blockSize>>>(d_inputImage, d_outputImage, width, height);
-    cudaEventRecord(stop);
 
-    // Synchronize events
-    cudaEventSynchronize(stop);
+    // initialize data at host side
+    double iStart = seconds();
+    initialData(A, nxy);
+    initialData(B, nxy);
+    double iElaps = seconds() - iStart;
+    printf("initialization: \t %f sec\n", iElaps);
 
-    // Calculate elapsed time
-    float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
+    memset(hostRef, 0, nBytes);
+    memset(gpuRef, 0, nBytes);
 
-    // Copy result back to host
-    checkCudaErrors(cudaMemcpy(h_outputImage, d_outputImage, imageSize, cudaMemcpyDeviceToHost));
+    // add matrix at host side for result checks
+    iStart = seconds();
+    sumMatrixOnHost(A, B, hostRef, nx, ny);
+    iElaps = seconds() - iStart;
+    printf("sumMatrix on host:\t %f sec\n", iElaps);
 
-    // Write output image
-    Mat outputImage(height, width, CV_8UC1, h_outputImage);
-    imwrite("output_sobel.jpeg", outputImage);
+    // invoke kernel at host side
+    int dimx = 32;
+    int dimy = 32;
+    dim3 block(dimx, dimy);
+    dim3 grid((nx + block.x - 1) / block.x, (ny + block.y - 1) / block.y);
 
-    // Free memory
-    free(h_outputImage);
-    cudaFree(d_inputImage);
-    cudaFree(d_outputImage);
+    // warm-up kernel, with unified memory all pages will migrate from host to
+    // device
+    sumMatrixGPU<<<grid, block>>>(A, B, gpuRef, 1, 1);
 
-    // Destroy CUDA events
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
+    // after warm-up, time with unified memory
+    iStart = seconds();
 
-    // Print elapsed time
-    printf("Total time taken: %f milliseconds\n", milliseconds);
+    sumMatrixGPU<<<grid, block>>>(A, B, gpuRef, nx, ny);
 
-    return 0;
+
+
+
+    CHECK(cudaDeviceSynchronize());
+    iElaps = seconds() - iStart;
+    printf("sumMatrix on gpu :\t %f sec <<<(%d,%d), (%d,%d)>>> \n", iElaps,
+            grid.x, grid.y, block.x, block.y);
+
+    // check kernel error
+    CHECK(cudaGetLastError());
+
+    // check device results
+    checkResult(hostRef, gpuRef, nxy);
+
+    // free device global memory
+    CHECK(cudaFree(A));
+    CHECK(cudaFree(B));
+    CHECK(cudaFree(hostRef));
+    CHECK(cudaFree(gpuRef));
+
+    // reset device
+    CHECK(cudaDeviceReset());
+
+    return (0);
 }
-
-import cv2
-from matplotlib import pyplot as plt
-
-# Read and display the output image
-output_image_path = '/content/output_sobel.jpeg'
-output_image = cv2.imread(output_image_path, cv2.IMREAD_GRAYSCALE)  # Use IMREAD_GRAYSCALE if it's a single-channel image
-
-# Display the image
-plt.imshow(output_image, cmap='gray')
-plt.title('Edge Detection Output')
-plt.axis('off')  # Hide the axes
-plt.show()
 ```
-
 ## OUTPUT:
-
-<img width="736" height="473" alt="image" src="https://github.com/user-attachments/assets/c4625847-cec2-4195-ada4-f62ea111e94a" />
+<img width="1187" height="127" alt="Screenshot 2026-03-22 103348" src="https://github.com/user-attachments/assets/030e6a49-5c64-4027-89f9-b639b482564c" />
 
 ## RESULT:
-Thus the program has been executed by using CUDA to accelerate Sobel edge detection and improve image processing performance using parallel computation on GPU..
-
-Questions:
-
-What challenges did you face while implementing the Sobel filter for color images?Implementing the Sobel filter for color images was slightly difficult because color images have three channels, so they must first be converted into grayscale before applying the filter. Handling multiple channels also increases memory usage and makes indexing more complex.
-
-How did changing the block size influence the performance of your CUDA implementation?Changing the block size affected performance because smaller block sizes did not fully utilize the GPU, while very large block sizes caused overhead. A moderate block size like 16×16 gave better performance and efficient execution
-
-What were the differences in output between the CUDA and CPU implementations? Discuss any discrepancies.The output from the CUDA implementation was almost similar to the CPU-based Sobel filter, but the execution time was much faster in CUDA. Minor differences in output may occur due to floating-point calculations, but overall the results were nearly identical.
-
-Suggest potential optimizations for improving the performance of the Sobel filter.The performance of the Sobel filter can be improved by using shared memory, optimizing block and grid size, reducing global memory access, and minimizing unnecessary data transfers between CPU and GPU.
-
-Deliverables:
-
-Modified CUDA code with comments explaining your changes.
-A report summarizing your findings, including graphs of execution times and a comparison of outputs.
-Answers to the questions posed in the experiment.
+Thus the program has been executed by using unified memory. It is observed that removing memset function has given less execution time.
